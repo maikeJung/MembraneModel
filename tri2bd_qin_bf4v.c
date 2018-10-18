@@ -13,13 +13,13 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define  DT       0.0001        /* time interval of a unit step */
-#define  NUMBER   2562           /* number of vertices  */
-#define  KBT      1.0          /* temprature k_BT */
+#define  DT       0.0001         	 /* time interval of a unit step */
+#define  NUMBER   2562           	 /* number of vertices  */
+#define  KBT      1.0            	 /* temprature k_BT */
 #define  BETA    (-1.0/KBT)
-#define  BMASSB   1.0            /* mass of the vertices */
+#define  BMASSB   1.0            	 /* mass of the vertices */
 
-#define  MAXBOND  20             /* maximum of bonds */ 
+#define  MAXBOND  20             	 /* maximum of bonds */ 
 #define  NF       (2*(NUMBER-2 ))    /* number of faces */
 #define  NE       (3*(NUMBER-2 ))    /* number of vertices */
 
@@ -81,7 +81,8 @@ double gasdev();
 double ran2();
 void set_gg();
 void find_points();
-void fran();
+void ext_const_force();
+void ext_const_force_single();
 double calc_max_dist();
 
 int main(){
@@ -100,7 +101,7 @@ int main(){
 	double en[9],rg[5],ar[5],vol0,vol00[2],vol_int,vol_fin,pf,fdist;
 	double en_m[9],en_m2[9],cv[9],rgm[12],arm[10];
 	double ari[NUMBER],rni[NUMBER][3],eni[NUMBER],gni[NUMBER][3];
-	double ranforce[NUMBER][3];
+	double extforce[NUMBER][3];
 	double maxdist;
 	  
 	int istep,maxstep,itime_m,itime_l,imstep,imsteph, runnumber;
@@ -109,9 +110,9 @@ int main(){
 	long   iseed=-11;
 	double gm,dif[2],dtm, gmpulse,gmminus,gmrate,dtymgmp;
 	double bqmax[2],rbonl[4];
-	FILE *finp,*dp,*arp,*enp,*rp,*mp,*forces,*forcelength,*forcedev,*dpVMD;
+	FILE *finp,*dp,*arp,*enp,*rp,*mp,*forcedev,*dpVMD;
 
-	/* read simulation parameters */
+	/* read simulation parameters from file */
 	finp=fopen("para","r"); 
 	fscanf(finp,"%lf %lf",&vol_int,&vol_fin);
 	fscanf(finp,"%d",&maxstep);
@@ -124,7 +125,7 @@ int main(){
 	fclose(finp);
 	imsteph=imstep/2;
 
-	printf("test %d \n", runnumber);	
+	printf("START SIMULATION \n f = %.2f; run %d \n",pf , runnumber);	
 	
 	for(i=0;i<2;i++)
 		bqmax[i]=0.;
@@ -140,6 +141,7 @@ int main(){
 	vol00[0]= vol_int;
 	vol0=vol00[0]*vol00[1];
 
+	/* parameters for integration (leapfrog with Langevin thermostat) */
 	gm=1.;
 	dtm=DT/BMASSB;
 	dif[0]=sqrt(2.*gm*KBT/DT);
@@ -149,14 +151,13 @@ int main(){
 	dtymgmp=dtm/gmpulse;
 
 	/* output files for later */
-	char buf_m[0x100], buf_draw[0x100], buf_ar[0x100], buf_en[0x100], buf_rad[0x100], buf_forces[0x100], buf_forcedev[0x100], buf_drawVMD[0x100];
+	char buf_m[0x100], buf_draw[0x100], buf_ar[0x100], buf_en[0x100], buf_rad[0x100], buf_forcedev[0x100], buf_drawVMD[0x100];
 	snprintf(buf_m, sizeof(buf_m), "Data/m_pf%.0f_%d.dat", pf,runnumber);
 	snprintf(buf_draw, sizeof(buf_draw), "Data/draw_pf%.0f_%d.dat", pf,runnumber);
 	snprintf(buf_ar, sizeof(buf_ar), "Data/ar_pf%.0f_%d.dat", pf,runnumber);
 	snprintf(buf_en, sizeof(buf_en), "Data/en_pf%.0f_%d.dat", pf,runnumber);
 	snprintf(buf_rad, sizeof(buf_rad), "Data/rad_pf%.0f_%d.dat", pf,runnumber);
-	snprintf(buf_forces, sizeof(buf_forces), "Data/forces_pf%.0f_%d.dat", pf,runnumber);
-	snprintf(buf_forcedev, sizeof(buf_forcedev), "Data/forcesdevel_pf%.0f_%d.dat", pf,runnumber);
+	snprintf(buf_forcedev, sizeof(buf_forcedev), "Data/time_evolution_pf%.0f_%d.dat", pf,runnumber);
 	snprintf(buf_drawVMD, sizeof(buf_drawVMD), "Data/drawVMD_pf%.0f_%d.xyz", pf,runnumber);
 
 	mp=fopen(buf_m,"w");
@@ -166,9 +167,7 @@ int main(){
 	arp=fopen(buf_ar,"w"); 
 	enp=fopen(buf_en,"w"); 
 	rp =fopen(buf_rad,"w"); 
-	forces = fopen(buf_forces,"w");
 	forcedev = fopen(buf_forcedev,"w");
-	forcelength = fopen("Data/forces_vs_length.dat","a+");
 
 	/* read initial configuration */
 	read_init(bx,by,bz,bxv,byv,bzv,bxq,byq,bzq,iface,iedge,ibon_all,nbon_all,iedb,iedf,ifaed,mp,index_pull);
@@ -234,11 +233,12 @@ int main(){
 		/* calculate forces and velocities */
 		cal_force(bx,by,bz,fx,fy,fz,ari,rni,eni,en,ar,vol0,iface,iedge,ibon_all,nbon_all,ibook,ibooki,icnt,index_pull, pull, istep);
 		wnoise(&iseed,wn_f,dif);
-		fran(ranforce, index_pull, pull, istep);
+		ext_const_force(extforce, index_pull, pull, istep);
+		ext_const_force_single(extforce, index_pull, pull, istep);
 		for(i=0;i<NUMBER;i++){
-			bxv[i]  = gmrate*bxv[i] + dtymgmp*(fx[i]+wn_f[3*i]+ranforce[i][0]);
-			byv[i]  = gmrate*byv[i] + dtymgmp*(fy[i]+wn_f[3*i+1]+ranforce[i][1]);
-			bzv[i]  = gmrate*bzv[i] + dtymgmp*(fz[i]+wn_f[3*i+2]+ranforce[i][2]);
+			bxv[i]  = gmrate*bxv[i] + dtymgmp*(fx[i]+wn_f[3*i]+extforce[i][0]);
+			byv[i]  = gmrate*byv[i] + dtymgmp*(fy[i]+wn_f[3*i+1]+extforce[i][1]);
+			bzv[i]  = gmrate*bzv[i] + dtymgmp*(fz[i]+wn_f[3*i+2]+extforce[i][2]);
 		}
 
 		
@@ -337,7 +337,6 @@ int main(){
 		fprintf(mp,"error too small rbook %lg %lg\n",2.*bqmax[0]+RCUTI,sqrt(RBOOK2) );
 
 	fdist = sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]]));
-	fprintf(forcelength, "%lg %lg\n", fdist, pf);
 	printf("FINISHED: d = %lg ; pf = %lg \n", fdist,pf );
   
 	fclose(mp);
@@ -346,8 +345,6 @@ int main(){
 	fclose(arp);
 	fclose(enp);
 	fclose(rp);
-	fclose(forces);
-	fclose(forcelength);
 	fclose(forcedev);
 
 	return 0;
@@ -1346,7 +1343,6 @@ void read_init(bx,by,bz,bxv,byv,bzv,bxq,byq,bzq,iface,iedge,ibon_all,nbon_all,ie
   sort_bd(bx, by, bz,bxv, byv,bzv,bxq,byq,bzq,iface,iedge,ibon_all,nbon_all,iedb,iedf,ifaed,mp,index_pull);
   check_bond(ibon_all,nbon_all,mp);
 
-	printf("INITIAL CONFIGURATION READ \n");
 }
 
 void set_gg(bxv, byv,bzv)
@@ -2008,26 +2004,6 @@ void find_points(index_pull, bx, by, bz, pull,pf)
 		}
 	}
 	maxdist = sqrt(maxdist);
-	/*
-	norm1 = 1.0/sqrt(bx[index_pull[0]]*bx[index_pull[0]] + by[index_pull[0]]*by[index_pull[0]] + bz[index_pull[0]]*bz[index_pull[0]] );
-	norm2 = 1.0/sqrt(bx[index_pull[1]]*bx[index_pull[1]] + by[index_pull[1]]*by[index_pull[1]] + bz[index_pull[1]]*bz[index_pull[1]] );
-	pull[0][0] = pf*norm1*bx[index_pull[0]];
-	pull[1][0] = pf*norm2*bx[index_pull[1]];
-	pull[0][1] = pf*norm1*by[index_pull[0]];
-	pull[1][1] = pf*norm2*by[index_pull[1]];
-	pull[0][2] = pf*norm1*bz[index_pull[0]];
-	pull[1][2] = pf*norm2*bz[index_pull[1]];
-	
-
-	index_pull[0] = 14;
-	index_pull[1] = 13;
-	pull[0][0] = 0.0;
-	pull[1][0] = 0.0;
-	pull[0][1] = 0.0;
-	pull[1][1] = 0.0;
-	pull[0][2] = 1.0;
-	pull[1][2] = -1.0;
-	*/
 
 	/* apply force in opposing directions */
 	norm = 1.0/sqrt(bx[index_pull[0]]*bx[index_pull[0]] + by[index_pull[0]]*by[index_pull[0]] + bz[index_pull[0]]*bz[index_pull[0]] );
@@ -2038,31 +2014,55 @@ void find_points(index_pull, bx, by, bz, pull,pf)
 	pull[0][2] = pf*norm*bz[index_pull[0]];
 	pull[1][2] = -pf*norm*bz[index_pull[0]];
 
-	
-	printf("dist start: %f \n vert1 %d: %f %f %f  \n vert2 %d: %f %f %f \n", maxdist, index_pull[0], bx[index_pull[0]], by[index_pull[0]], bz[index_pull[0]], index_pull[1], bx[index_pull[1]], by[index_pull[1]], bz[index_pull[1]]);
-
 }
 
 
-void fran(ranforce, index_pull, pull, istep)
+void ext_const_force(extforce, index_pull, pull, istep)
 	int index_pull[2];
 	int istep;
-	double ranforce[NUMBER][3], pull[2][3];
+	double extforce[NUMBER][3], pull[2][3];
 {
+	/* apply constant external force in two oppsing directions
+	   - possible to apply force only for a fixed period of time */
 	int i, j;
 	for(i=0; i<NUMBER; i++){
 		for(j=0; j<3; j++){
-			ranforce[i][j] = 0.0;
+			extforce[i][j] = 0.0;
 		}
 	 }
-	if(istep < 3000000){
-		ranforce[index_pull[0]][0] = pull[0][0];
-		ranforce[index_pull[0]][1] = pull[0][1];
-		ranforce[index_pull[0]][2] = pull[0][2];
+	if(istep < 2000000){
+		extforce[index_pull[0]][0] = pull[0][0];
+		extforce[index_pull[0]][1] = pull[0][1];
+		extforce[index_pull[0]][2] = pull[0][2];
 
-		ranforce[index_pull[1]][0] = pull[1][0];
-		ranforce[index_pull[1]][1] = pull[1][1];
-		ranforce[index_pull[1]][2] = pull[1][2];
+		extforce[index_pull[1]][0] = pull[1][0];
+		extforce[index_pull[1]][1] = pull[1][1];
+		extforce[index_pull[1]][2] = pull[1][2];
+	}
+
+}
+
+void ext_const_force_single(extforce, index_pull, pull, istep)
+	int index_pull[2];
+	int istep;
+	double extforce[NUMBER][3], pull[2][3];
+{
+	/* apply constant external force in two oppsing directions
+	   - possible to apply force only for a fixed period of time */
+	int i, j;
+	for(i=0; i<NUMBER; i++){
+		for(j=0; j<3; j++){
+			extforce[i][j] = 0.0;
+		}
+	 }
+	if(istep < 2000000){
+		extforce[index_pull[0]][0] = pull[0][0];
+		extforce[index_pull[0]][1] = pull[0][1];
+		extforce[index_pull[0]][2] = pull[0][2];
+
+		extforce[index_pull[1]][0] = 0.0;
+		extforce[index_pull[1]][1] = 0.0;
+		extforce[index_pull[1]][2] = 0.0;
 	}
 
 }

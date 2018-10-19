@@ -15,7 +15,7 @@
 
 #define  DT       0.0001         	 /* time interval of a unit step */
 #define  NUMBER   2562           	 /* number of vertices  */
-#define  KBT      0.00001            	 /* temprature k_BT */
+#define  KBT      1.0            	 /* temprature k_BT */
 #define  BETA    (-1.0/KBT)
 #define  BMASSB   1.0            	 /* mass of the vertices */
 
@@ -80,7 +80,7 @@ void wnoise();
 double gasdev();
 double ran2();
 void set_gg();
-double calc_cm();
+void calc_cm();
 void find_points();
 void ext_const_force();
 void ext_const_force_single();
@@ -104,7 +104,7 @@ int main(){
 	double ari[NUMBER],rni[NUMBER][3],eni[NUMBER],gni[NUMBER][3];
 	double extforce[NUMBER][3];
 	double maxdist;
-	double xcm, ycm, zcm;
+	double cm[3];
 	  
 	int istep,maxstep,itime_m,itime_l,imstep,imsteph, runnumber;
 	int i,iii;
@@ -145,7 +145,7 @@ int main(){
 
 	/* parameters for integration (leapfrog with Langevin thermostat) */
 	//gm=1.;
-	gm = 1.0;
+	gm = 0.0001;
 	dtm=DT/BMASSB;
 	dif[0]=sqrt(2.*gm*KBT/DT);
 	gmpulse= 1. + gm*DT/(2.*BMASSB);
@@ -198,8 +198,8 @@ int main(){
 
 	record_draw(bx,by,bz,iface,0,dp);
 	record_drawVMD(bx,by,bz,0,dpVMD);
-	xcm, ycm, zcm = calc_cm(bx, by,bz);
-	fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),xcm, ycm, zcm);
+	calc_cm(bx, by,bz,cm);
+	fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),cm[0], cm[1], cm[2]);
 	fprintf(enp,"%12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg \n", istep*DT, en[0],en[1]/NUMBER,en[2]/NUMBER,en[3],en[4],en[5],en[6]/NUMBER);
 	fprintf(rp,"%12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, rg[0],rg[2],rg[3],rg[4],rbonl[0],gg[0],gg[1],gg[2]);
 	fprintf(arp,"%12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, ar[0],ar[1],ar[4],ar[3]/ARD00,vol00[0]);
@@ -267,8 +267,8 @@ int main(){
 					record_draw(bx,by,bz,iface,istep,dp);
 					record_drawVMD(bx,by,bz,istep,dpVMD);
 					maxdist = calc_max_dist(bx, by, bz);
-					xcm, ycm, zcm = calc_cm(bx, by,bz);
-					fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg \n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),maxdist,xcm, ycm, zcm);
+					calc_cm(bx, by,bz, cm);
+					fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg \n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),maxdist,cm[0], cm[1], cm[2]);
 					check_V(bx,by,bz,gg,ar,iface,iedge,mp);
 					if( ( istep/(itime_l*10) )*(itime_l*10)==istep){
 						// resort faces and edges for faster computation 
@@ -1375,25 +1375,24 @@ void set_gg(bxv, byv,bzv)
 
 }
 
-double calc_cm(bx, by,bz)
+void calc_cm(bx, by, bz, cm)
      double  bx[], by[], bz[];
+	 double  cm[3];
 {
 	/* calculate the center-of-mass */
   int i;
   double g[3];
 
   for(i=0;i<3;i++)
-    g[i]=0.;
+    cm[i]=0.;
   for(i=0;i<NUMBER;i++){
-    g[0]=g[0]+bx[i];
-    g[1]=g[1]+by[i];
-    g[2]=g[2]+bz[i];
+    cm[0]=cm[0]+bx[i];
+    cm[1]=cm[1]+by[i];
+    cm[2]=cm[2]+bz[i];
   }
 
   for(i=0;i<3;i++)
-    g[i]=g[i]/NUMBER;
-
-	return g[0], g[1], g[2];
+    cm[i]=cm[i]/NUMBER;
 
 }
 
@@ -2042,6 +2041,8 @@ void find_points(index_pull, bx, by, bz, pull,pf)
 	pull[0][2] = pf*norm*bz[index_pull[0]];
 	pull[1][2] = -pf*norm*bz[index_pull[0]];
 
+	printf("pulling dir: %12lg %12lg %12lg \n", pull[0][0], pull[0][1], pull[0][2]);
+
 }
 
 
@@ -2091,6 +2092,7 @@ void ext_const_force_single(extforce, index_pull, pull, istep)
 		extforce[index_pull[1]][0] = 0.0;
 		extforce[index_pull[1]][1] = 0.0;
 		extforce[index_pull[1]][2] = 0.0;
+
 	}
 
 }

@@ -15,7 +15,7 @@
 
 #define  DT       0.0001         	 /* time interval of a unit step */
 #define  NUMBER   2562           	 /* number of vertices  */
-#define  KBT      1.0            	 /* temprature k_BT */
+#define  KBT      0.0            	 /* temprature k_BT */
 #define  BETA    (-1.0/KBT)
 #define  BMASSB   1.0            	 /* mass of the vertices */
 
@@ -123,6 +123,7 @@ int main(){
 	fscanf(finp,"%d",&imstep);
 	fscanf(finp,"%ld",&iseed);
 	fscanf(finp,"%lf",&pf);
+	fscanf(finp,"%lf",&gm);
 	fscanf(finp,"%d",&runnumber);
 	fclose(finp);
 	imsteph=imstep/2;
@@ -145,7 +146,6 @@ int main(){
 
 	/* parameters for integration (leapfrog with Langevin thermostat) */
 	//gm=1.;
-	gm = 0.0001;
 	dtm=DT/BMASSB;
 	dif[0]=sqrt(2.*gm*KBT/DT);
 	gmpulse= 1. + gm*DT/(2.*BMASSB);
@@ -199,7 +199,7 @@ int main(){
 	record_draw(bx,by,bz,iface,0,dp);
 	record_drawVMD(bx,by,bz,0,dpVMD);
 	calc_cm(bx, by,bz,cm);
-	fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),cm[0], cm[1], cm[2]);
+	fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg \n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),cm[0], cm[1], cm[2]);
 	fprintf(enp,"%12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg \n", istep*DT, en[0],en[1]/NUMBER,en[2]/NUMBER,en[3],en[4],en[5],en[6]/NUMBER);
 	fprintf(rp,"%12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, rg[0],rg[2],rg[3],rg[4],rbonl[0],gg[0],gg[1],gg[2]);
 	fprintf(arp,"%12lg %12lg %12lg %12lg %12lg %12lg\n", istep*DT, ar[0],ar[1],ar[4],ar[3]/ARD00,vol00[0]);
@@ -209,7 +209,7 @@ int main(){
 	/*----------------main loop----------------*/
 	for(istep=1;istep<=maxstep;istep++){
 		
-		if(istep%10000==0){
+		if(istep%1000000==0){
 			printf("step: %d; time: %f \n", istep, istep*DT);
 		}
 
@@ -268,7 +268,7 @@ int main(){
 					record_drawVMD(bx,by,bz,istep,dpVMD);
 					maxdist = calc_max_dist(bx, by, bz);
 					calc_cm(bx, by,bz, cm);
-					fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg %12lg \n", istep*DT, sqrt((bx[index_pull[0]] - bx[index_pull[1]])*(bx[index_pull[0]] - bx[index_pull[1]]) + (by[index_pull[0]] - by[index_pull[1]])*(by[index_pull[0]] - by[index_pull[1]]) + (bz[index_pull[0]] - bz[index_pull[1]])*(bz[index_pull[0]] - bz[index_pull[1]])),maxdist,cm[0], cm[1], cm[2]);
+					fprintf(forcedev,"%12lg %12lg %12lg %12lg %12lg \n", istep*DT, maxdist,cm[0], cm[1], cm[2]);
 					check_V(bx,by,bz,gg,ar,iface,iedge,mp);
 					if( ( istep/(itime_l*10) )*(itime_l*10)==istep){
 						// resort faces and edges for faster computation 
@@ -535,7 +535,6 @@ void cal_force(bx,by,bz,fx,fy,fz,ari,rni,eni,en,ar,vol0,iface,iedge,ibon_all,nbo
   }
   en[4]= 0.5*KARE*(ar[0]-ARE0)*(ar[0]-ARE0);
   en[5]= 0.5*KVOL*(ar[1]-vol0)*(ar[1]-vol0);
-	//printf("test vol %lg %lg \n", ar[1], vol0);
   if( fabs(ar[0]-ar0)>0.0001)
     printf("ar %lg     %lg %lg area\n",ar[0]-ar0,ar[0],ar0);
    
@@ -1572,8 +1571,6 @@ void energy(bx,by,bz,bxv,byv,bzv,rni,gni,iface,iedge,en,ar,rbonl)
     a0= sqrt(gn[0]*gn[0]+gn[1]*gn[1]+gn[2]*gn[2]);
     h0= gn[0]*bx[ib]+gn[1]*by[ib]+gn[2]*bz[ib];
     vo0=vo0+h0;
-		if(h0 < -100){
-		printf("test vol %lg face %d xyz %d %d %d\n", h0, i, ib, jb, kb);}
     ar0=ar0+a0;
   }
   rbonl[0]=rbonl[0]/NE;
@@ -2084,7 +2081,7 @@ void ext_const_force_single(extforce, index_pull, pull, istep)
 			extforce[i][j] = 0.0;
 		}
 	 }
-	if(istep < 2000000){
+	if(istep < 50000000000){
 		extforce[index_pull[0]][0] = pull[0][0];
 		extforce[index_pull[0]][1] = pull[0][1];
 		extforce[index_pull[0]][2] = pull[0][2];
